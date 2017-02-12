@@ -1,0 +1,36 @@
+version: '2'
+
+services:
+  dynamodb:
+    image: deangiberson/aws-dynamodb-local
+    volumes:
+    - dynamodb_data:/var/dynamodb_local
+    ports:
+    - 8000:8000
+
+  rack:
+    build:
+      context: .
+    command: bundle exec rackup --port 8001 --host "0.0.0.0" --env development
+    environment:
+    - DYNAMO_DB_HOST=dynamodb
+    - DYNAMO_DB_PORT=8000
+    env_file:
+    - ./.env
+    volumes:
+    - .:/app
+    - bundle_install:/app/vendor/bundle
+    - bundle:/app/.bundle
+    ports:
+    - 8001:8001
+    depends_on:
+    - dynamodb
+
+
+volumes:
+  dynamodb_data:
+    driver: local
+  bundle_install:
+    driver: local
+  bundle:
+    driver: local
