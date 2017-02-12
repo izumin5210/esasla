@@ -1,8 +1,15 @@
+require 'net/http'
+
 class App < Sinatra::Base
   configure :development do
     require 'sinatra/reloader'
     register Sinatra::Reloader
     Dir[File.join(SOURCES_DIR, '**', '*.rb')].each { |f| also_reload f }
+  end
+
+  use Rack::Session::Cookie
+  use OmniAuth::Builder do
+    provider :esa, ENV['ESA_CLIENT_ID'], ENV['ESA_CLIENT_SECRET'], scope: 'read write'
   end
 
   def esa_client
@@ -40,16 +47,37 @@ class App < Sinatra::Base
         {
           color: 'warning',
           text: text,
+          mrkdwn_in: ['text']
         }
       ],
     }
   end
 
   post '/' do
-    text = params[:text]
     msg = {}
+    text = params[:text]
+    user_id = params[:user_id]
 
-    if text&.empty?
+    user = User.find(user_id)
+
+    if user.blank?
+      query = Rack::Utils.build_nested_query({ state: {
+        slack: {
+          user_id: user_id,
+          response_url: params[:response_url],
+          text: text,
+        },
+      }})
+      msg = {
+        attachments: [
+          {
+            color: 'warning',
+            title: 'Please authenticate on your esa.io account :bow:',
+            title_link: "#{request.base_url}/auth/esa?#{query}"
+          }
+        ]
+      }
+    elsif text&.empty?
       msg = build_usage_message
     else
       m = text.match(/\A(?<cmd>\S+)\s*(?<args>.*)/m)
@@ -79,5 +107,30 @@ class App < Sinatra::Base
     end
 
     json msg
+  end
+
+  get '/auth/:name/callback' do
+    auth = request.env['omniauth.auth']
+    state = request.env['omniauth.params']['state']
+    cmd = CreateUserCommand.run(auth: auth, state: state)
+    if cmd.success?
+      uri = URI.parse(cmd.slack_response_url)
+      https = Net::HTTP.new(uri.host, uri.port)
+      https.use_ssl = true
+      req = Net::HTTP::Post.new(uri.request_uri)
+      req['Content-Type'] = 'application/json'
+      req.body = {
+        attachments: [
+          {
+            color: 'good',
+            text: 'Authenticate your account successfully!',
+          }
+        ]
+      }.to_json
+      https.start { |x| x.request(req) }
+    else
+      # TODO: handle errors
+    end
+    "ok"
   end
 end
