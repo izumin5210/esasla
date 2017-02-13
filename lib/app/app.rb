@@ -69,7 +69,6 @@ class App < Sinatra::Base
 
   def build_urge_to_register_team_message
     {
-      response_type: 'in_channel',
       attachments: [
         {
           color: 'warning',
