@@ -40,6 +40,7 @@ class App < Sinatra::Base
 
       create    create new post. the first line is used as a post title.
       list      fetch posts. if you pass args, they will use as search queries.
+      team      register or show your esa.io team.
     ```
     USAGE
     {
@@ -103,6 +104,37 @@ class App < Sinatra::Base
           response_type: 'in_channel',
           attachments: build_attatchments_from_posts(cmd.posts),
         }
+      end
+    when 'team'
+      cmd = BindSlackAndEsaTeamCommand.run(
+        user: user,
+        team: team,
+        esa_team_name: args,
+      )
+      if cmd.success?
+        if cmd.updated?
+          msg = {
+            response_type: 'in_channel',
+            attachments: [
+              {
+                color: 'good',
+                text: "Register #{cmd.team.esa_team_name}.esa.io successfully!",
+              },
+            ]
+          }
+        elsif cmd.team.registered?
+          msg = {
+            response_type: 'in_channel',
+            attachments: [
+              {
+                color: 'good',
+                text: "current team: #{cmd.team.esa_team_name}.esa.io",
+              },
+            ]
+          }
+        else
+          msg = build_urge_to_register_team_message
+        end
       end
     else
       msg = build_usage_message
