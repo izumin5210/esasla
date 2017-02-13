@@ -1,13 +1,15 @@
 class FetchPostsCommand
   include Command
 
-  attr_reader :esa_client, :query, :posts
+  attr_reader :team, :user, :query, :posts
 
-  validates :esa_client, presence: true
+  validates :team, presence: true
+  validates :user, presence: true
   validates :query, presence: true
 
-  def initialize(args, esa_client:)
-    @esa_client = esa_client
+  def initialize(args, team:, user:)
+    @team = team
+    @user = user
     @query = args&.empty? ? default_query : args
   end
 
@@ -22,10 +24,13 @@ class FetchPostsCommand
   private
 
   def default_query
-    "wip:true in:#{default_category}"
+    "wip:true in:#{team.esa_default_category}"
   end
 
-  def default_category
-    ENV['ESA_DEFAULT_CATEGORY']
+  def esa_client
+    @esa_client ||= Esa::Client.new(
+      access_token: user.esa_access_token,
+      current_team: team.esa_team_name,
+    )
   end
 end
