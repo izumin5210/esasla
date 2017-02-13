@@ -12,13 +12,6 @@ class App < Sinatra::Base
     provider :esa, ENV['ESA_CLIENT_ID'], ENV['ESA_CLIENT_SECRET'], scope: 'read write'
   end
 
-  def esa_client
-    @esa_client = Esa::Client.new(
-      access_token: ENV['ESA_ACCESS_TOKEN'],
-      current_team: ENV['ESA_CURRENT_TEAM'],
-    )
-  end
-
   def build_attatchments_from_posts(posts)
     posts.map { |post| build_attatchment_from_post(post) }
   end
@@ -41,6 +34,7 @@ class App < Sinatra::Base
       create    create new post. the first line is used as a post title.
       list      fetch posts. if you pass args, they will use as search queries.
       team      register or show your esa.io team.
+      category  register default category for creating/fetching esa posts
     ```
     USAGE
     {
@@ -73,7 +67,7 @@ class App < Sinatra::Base
     }
   end
 
-  def build_urge_to_register_team_message()
+  def build_urge_to_register_team_message
     {
       response_type: 'in_channel',
       attachments: [
@@ -89,7 +83,7 @@ class App < Sinatra::Base
   def handle_command(user:, team:, cmd:, args:)
     case cmd
     when 'create'
-      cmd = CreatePostCommand.run(args, esa_client: esa_client)
+      cmd = CreatePostCommand.run(args, team: team, user: user)
       if cmd.success?
         msg = {
           response_type: 'in_channel',
@@ -98,7 +92,7 @@ class App < Sinatra::Base
         }
       end
     when 'list'
-      cmd = FetchPostsCommand.run(args, esa_client: esa_client)
+      cmd = FetchPostsCommand.run(args, team: team, user: user)
       if cmd.success?
         msg = {
           response_type: 'in_channel',
@@ -135,6 +129,20 @@ class App < Sinatra::Base
         else
           msg = build_urge_to_register_team_message
         end
+      end
+    when 'category'
+      cmd = SetDefaultCategoryCommand.run(team: team, default_category: args)
+      if cmd.success?
+        msg = {
+          response_type: 'in_channel',
+          attachments: [
+            {
+              color: 'good',
+              text: "Update default category to `#{cmd.team.esa_default_category}` successfully!",
+              mrkdwn_in: ['text']
+            },
+          ]
+        }
       end
     else
       msg = build_usage_message
