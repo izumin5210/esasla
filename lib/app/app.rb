@@ -53,56 +53,99 @@ class App < Sinatra::Base
     }
   end
 
+  def build_auth_link_message(user:, response_url:, text:)
+    query = Rack::Utils.build_nested_query({ state: {
+      slack: {
+        user_id: user.slack_user_id,
+        response_url: params[:response_url],
+        text: text,
+      },
+    }})
+    msg = {
+      attachments: [
+        {
+          color: 'warning',
+          title: 'Please authenticate on your esa.io account :bow:',
+          title_link: "#{request.base_url}/auth/esa?#{query}"
+        }
+      ]
+    }
+  end
+
+  def build_urge_to_register_team_message()
+    {
+      response_type: 'in_channel',
+      attachments: [
+        {
+          color: 'warning',
+          text: "Please register your esa team `/esasla team <your_esa_team_name>` :bow:",
+          mrkdwn_in: ['text'],
+        },
+      ]
+    }
+  end
+
+  def handle_command(user:, team:, cmd:, args:)
+    case cmd
+    when 'create'
+      cmd = CreatePostCommand.run(args, esa_client: esa_client)
+      if cmd.success?
+        msg = {
+          response_type: 'in_channel',
+          text: 'Created new post',
+          attachments: build_attatchments_from_posts([cmd.post]),
+        }
+      end
+    when 'list'
+      cmd = FetchPostsCommand.run(args, esa_client: esa_client)
+      if cmd.success?
+        msg = {
+          response_type: 'in_channel',
+          attachments: build_attatchments_from_posts(cmd.posts),
+        }
+      end
+    else
+      msg = build_usage_message
+    end
+  end
+
   post '/' do
     msg = {}
     text = params[:text]
     user_id = params[:user_id]
+    team_id = params[:team_id]
+
+    team = Team.find(team_id)
+    if team.blank?
+      team = Team.create!(slack_team_id: team_id)
+    end
 
     user = User.find(user_id)
-
     if user.blank?
-      query = Rack::Utils.build_nested_query({ state: {
-        slack: {
-          user_id: user_id,
-          response_url: params[:response_url],
-          text: text,
-        },
-      }})
-      msg = {
-        attachments: [
-          {
-            color: 'warning',
-            title: 'Please authenticate on your esa.io account :bow:',
-            title_link: "#{request.base_url}/auth/esa?#{query}"
-          }
-        ]
-      }
+      user = team.users.create!(slack_user_id: user_id)
+    end
+
+    if !user.authenticated?
+      msg = build_auth_link_message(
+        user: user,
+        response_url: params[:response_url],
+        text: text,
+      )
     elsif text&.empty?
       msg = build_usage_message
     else
       m = text.match(/\A(?<cmd>\S+)\s*(?<args>.*)/m)
-      args = m[:args]
+      team = Team.find(team_id)
 
-      case m[:cmd]
-      when 'create'
-        cmd = CreatePostCommand.run(args, esa_client: esa_client)
-        if cmd.success?
-          msg = {
-            response_type: 'in_channel',
-            text: 'Created new post',
-            attachments: build_attatchments_from_posts([cmd.post]),
-          }
-        end
-      when 'list'
-        cmd = FetchPostsCommand.run(args, esa_client: esa_client)
-        if cmd.success?
-          msg = {
-            response_type: 'in_channel',
-            attachments: build_attatchments_from_posts(cmd.posts),
-          }
-        end
+      if m[:cmd] != 'team' && !team.registered?
+        msg = build_urge_to_register_team_message
       else
-        msg = build_usage_message
+        msg = handle_command(
+          user: user,
+          team: team,
+          cmd: m[:cmd],
+          args: m[:args]
+        )
       end
     end
 
@@ -112,7 +155,7 @@ class App < Sinatra::Base
   get '/auth/:name/callback' do
     auth = request.env['omniauth.auth']
     state = request.env['omniauth.params']['state']
-    cmd = CreateUserCommand.run(auth: auth, state: state)
+    cmd = AuthUserCommand.run(auth: auth, state: state)
     if cmd.success?
       uri = URI.parse(cmd.slack_response_url)
       https = Net::HTTP.new(uri.host, uri.port)
