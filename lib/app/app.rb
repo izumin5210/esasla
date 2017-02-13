@@ -149,7 +149,7 @@ class App < Sinatra::Base
     end
   end
 
-  post '/' do
+  post '/callback' do
     msg = {}
     text = params[:text]
     user_id = params[:user_id]
