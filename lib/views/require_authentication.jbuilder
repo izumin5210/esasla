@@ -16,4 +16,5 @@ attachments = [
 
 json.attachments attachments do |attachment|
   json.extract! attachment, :color, :title, :title_link
+  json.fallback attachment[:title]
 end

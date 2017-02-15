@@ -9,4 +9,5 @@ attachments = [
 
 json.attachments attachments do |attachment|
   json.extract! attachment, :color, :text
+  json.fallback attachment[:text]
 end
