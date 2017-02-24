@@ -6,6 +6,7 @@ gem "rake"
 
 gem "sinatra", require: false
 gem "sinatra-contrib"
+gem "tilt-jbuilder", require: "sinatra/jbuilder"
 
 gem "esa"
 gem "aws-sdk"

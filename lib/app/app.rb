@@ -7,76 +7,12 @@ class App < Sinatra::Base
     Dir[File.join(SOURCES_DIR, '**', '*.rb')].each { |f| also_reload f }
   end
 
+  set :root, ROOT_DIR
+  set :views, [File.join(SOURCES_DIR, 'views')]
+
   use Rack::Session::Cookie
   use OmniAuth::Builder do
     provider :esa, ENV['ESA_CLIENT_ID'], ENV['ESA_CLIENT_SECRET'], scope: 'read write'
-  end
-
-  def build_attatchments_from_posts(posts)
-    posts.map { |post| build_attatchment_from_post(post) }
-  end
-
-  def build_attatchment_from_post(post)
-    { title: post['full_name'],
-      title_link: post['url'],
-    }
-  end
-
-  def build_usage_message
-    text = <<~USAGE
-    ```
-    Usage:
-
-      /esasla <command> [<args>]
-
-    The commands are:
-
-      create    create new post. the first line is used as a post title.
-      list      fetch posts. if you pass args, they will use as search queries.
-      team      register or show your esa.io team.
-      category  register default category for creating/fetching esa posts
-    ```
-    USAGE
-    {
-      attachments: [
-        {
-          color: 'warning',
-          text: text,
-          mrkdwn_in: ['text']
-        }
-      ],
-    }
-  end
-
-  def build_auth_link_message(user:, response_url:, text:)
-    query = Rack::Utils.build_nested_query({ state: {
-      slack: {
-        user_id: user.slack_user_id,
-        response_url: params[:response_url],
-        text: text,
-      },
-    }})
-    msg = {
-      attachments: [
-        {
-          color: 'warning',
-          title: 'Please authenticate on your esa.io account :bow:',
-          title_link: "#{request.base_url}/auth/esa?#{query}"
-        }
-      ]
-    }
-  end
-
-  def build_urge_to_register_team_message
-    {
-      attachments: [
-        {
-          color: 'warning',
-          text: "Please register your esa team `/esasla team <your_esa_team_name>` :bow:",
-          mrkdwn_in: ['text'],
-        },
-      ]
-    }
   end
 
   def handle_command(user:, team:, cmd:, args:)
@@ -84,19 +20,14 @@ class App < Sinatra::Base
     when 'create'
       cmd = CreatePostCommand.run(args, team: team, user: user)
       if cmd.success?
-        msg = {
-          response_type: 'in_channel',
-          text: 'Created new post',
-          attachments: build_attatchments_from_posts([cmd.post]),
-        }
+        @posts = [cmd.post]
+        jbuilder :posts
       end
     when 'list'
       cmd = FetchPostsCommand.run(args, team: team, user: user)
       if cmd.success?
-        msg = {
-          response_type: 'in_channel',
-          attachments: build_attatchments_from_posts(cmd.posts),
-        }
+        @posts = cmd.posts
+        jbuilder :posts
       end
     when 'team'
       cmd = BindSlackAndEsaTeamCommand.run(
@@ -106,50 +37,27 @@ class App < Sinatra::Base
       )
       if cmd.success?
         if cmd.updated?
-          msg = {
-            response_type: 'in_channel',
-            attachments: [
-              {
-                color: 'good',
-                text: "Register #{cmd.team.esa_team_name}.esa.io successfully!",
-              },
-            ]
-          }
+          @team = cmd.team
+          jbuilder :register_team
         elsif cmd.team.registered?
-          msg = {
-            response_type: 'in_channel',
-            attachments: [
-              {
-                color: 'good',
-                text: "current team: #{cmd.team.esa_team_name}.esa.io",
-              },
-            ]
-          }
+          @team = cmd.team
+          jbuilder :current_team
         else
-          msg = build_urge_to_register_team_message
+          jbuilder :urge_to_register_team
         end
       end
     when 'category'
       cmd = SetDefaultCategoryCommand.run(team: team, default_category: args)
       if cmd.success?
-        msg = {
-          response_type: 'in_channel',
-          attachments: [
-            {
-              color: 'good',
-              text: "Update default category to `#{cmd.team.esa_default_category}` successfully!",
-              mrkdwn_in: ['text']
-            },
-          ]
-        }
+        @team = cmd.team
+        jbuilder :update_default_category
       end
     else
-      msg = build_usage_message
+      jbuilder :usage
     end
   end
 
   post '/callback' do
-    msg = {}
     text = params[:text]
     user_id = params[:user_id]
     team_id = params[:team_id]
@@ -165,21 +73,22 @@ class App < Sinatra::Base
     end
 
     if !user.authenticated?
-      msg = build_auth_link_message(
-        user: user,
-        response_url: params[:response_url],
-        text: text,
-      )
+      @user = user
+      @text = text
+      @response_url = params[:response_url]
+      @auth_url = "#{request.base_url}/auth/esa"
+      jbuilder :require_authentication
     elsif text&.empty?
-      msg = build_usage_message
+      jbuilder :usage
     else
       m = text.match(/\A(?<cmd>\S+)\s*(?<args>.*)/m)
       team = Team.find(team_id)
 
       if m[:cmd] != 'team' && !team.registered?
-        msg = build_urge_to_register_team_message
+        # TODO
+        jbuilder :urge_to_register_team
       else
-        msg = handle_command(
+        handle_command(
           user: user,
           team: team,
           cmd: m[:cmd],
@@ -187,8 +96,6 @@ class App < Sinatra::Base
         )
       end
     end
-
-    json msg
   end
 
   get '/auth/:name/callback' do
