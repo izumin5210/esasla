@@ -20,12 +20,14 @@ class App < Sinatra::Base
     when 'create'
       cmd = CreatePostCommand.run(args, team: team, user: user)
       if cmd.success?
+        @text = 'Created new post successfully!'
         @posts = [cmd.post]
         jbuilder :posts
       end
     when 'list'
       cmd = FetchPostsCommand.run(args, team: team, user: user)
       if cmd.success?
+        @text = 'Retrieved posts successfully!'
         @posts = cmd.posts
         jbuilder :posts
       end

@@ -1,4 +1,6 @@
 json.response_type 'in_channel'
+json.text @text
+
 
 attachments = @posts.map do |post|
   {
