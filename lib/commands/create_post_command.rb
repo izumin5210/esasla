@@ -19,7 +19,6 @@ class CreatePostCommand
       name: name,
       body_md: body,
       category: category,
-      user: 'esa_bot',
     )
 
     # TODO: handle errors
