@@ -1,5 +1,4 @@
 json.response_type 'in_channel'
-json.text 'Created new post'
 
 attachments = @posts.map do |post|
   {
